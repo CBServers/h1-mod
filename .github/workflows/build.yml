@@ -55,6 +55,7 @@ jobs:
       #    name: ${{matrix.configuration}} data artifacts
       #    path: |
       #      data/*
+
   deploy:
     name: Deploy artifacts
     needs: build
@@ -76,15 +77,12 @@ jobs:
 
       - name: Create folder structure and rename files
         run: |
-          # Create main folder structure
           mkdir -p h1-mod/data
           mkdir -p h1-mod/data-dev
           
-          # Copy h1-mod.exe to both data folders
           Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data\
           Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data-dev\
           
-          # Rename hashed.json to files.json and create files-dev.json
           Copy-Item -Path .\hashed.json -Destination .\h1-mod\files.json
           Copy-Item -Path .\hashed.json -Destination .\h1-mod\files-dev.json
 
@@ -99,13 +97,26 @@ jobs:
 
       - name: Copy files to updater and cleanup
         run: |
-          # Copy entire h1-mod folder structure to updater
-          Copy-Item -Path .\h1-mod\* -Destination .\updater\updater\h1-mod\ -Recurse -Force
+          if (-Not (Test-Path -Path ".\updater\updater\h1-mod")) {
+            New-Item -Path ".\updater\updater\h1-mod" -ItemType Directory -Force
+          }
           
-          # Clean up temporary files
+          Copy-Item -Path ".\h1-mod\files.json" -Destination ".\updater\updater\h1-mod\" -Force
+          Copy-Item -Path ".\h1-mod\files-dev.json" -Destination ".\updater\updater\h1-mod\" -Force
+          
+          if (-Not (Test-Path -Path ".\updater\updater\h1-mod\data")) {
+            New-Item -Path ".\updater\updater\h1-mod\data" -ItemType Directory -Force
+          }
+          if (-Not (Test-Path -Path ".\updater\updater\h1-mod\data-dev")) {
+            New-Item -Path ".\updater\updater\h1-mod\data-dev" -ItemType Directory -Force
+          }
+          
+          Copy-Item -Path ".\h1-mod\data\h1-mod.exe" -Destination ".\updater\updater\h1-mod\data\" -Force
+          Copy-Item -Path ".\h1-mod\data-dev\h1-mod.exe" -Destination ".\updater\updater\h1-mod\data-dev\" -Force
+          
           Remove-Item -Path .\h1-mod -Recurse -Force
           Remove-Item -Path .\update-hasher.exe -Force
-          Remove-Item -Path .\hashed.json -Force
+          Remove-Item -Path .\hashed.json -Force -ErrorAction SilentlyContinue
 
       - name: Push changes to updater
         run: |
