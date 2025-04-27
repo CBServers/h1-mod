@@ -89,7 +89,7 @@ namespace auth
 		{
 			std::string data{};
 
-			auto key_path = (utils::properties::get_appdata_path() / "h1-private.key").generic_string();
+			auto key_path = (utils::properties::get_key_path() / "cb-private.key").generic_string();
 			if (!utils::io::read_file(key_path, &data))
 			{
 				return false;
@@ -113,7 +113,7 @@ namespace auth
 				throw std::runtime_error("Failed to generate cryptographic key!");
 			}
 
-			auto key_path = (utils::properties::get_appdata_path() / "h1-private.key").generic_string();
+			auto key_path = (utils::properties::get_key_path() / "cb-private.key").generic_string();
 			if (!utils::io::write_file(key_path, key.serialize()))
 			{
 				console::error("Failed to write cryptographic key!\n");
@@ -139,7 +139,7 @@ namespace auth
 		{
 			auto key = load_or_generate_key();
 
-			auto key_path = (utils::properties::get_appdata_path() / "h1-public.key").generic_string();
+			auto key_path = (utils::properties::get_key_path() / "cb-public.key").generic_string();
 			if (!utils::io::write_file(key_path, key.get_public_key()))
 			{
 				console::error("Failed to write public key!\n");

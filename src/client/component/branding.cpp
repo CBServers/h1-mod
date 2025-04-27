@@ -30,7 +30,8 @@ namespace branding
 
 		void draw_branding()
 		{
-			if (branding == nullptr || !branding->current.enabled)
+			if (branding == nullptr || (!branding->current.enabled && 
+				(game::CL_IsCgameInitialized() && !game::VirtualLobby_Loaded())))
 			{
 				return;
 			}
@@ -75,7 +76,7 @@ namespace branding
 
 			scheduler::once([]()
 			{
-				branding = dvars::register_bool("branding", true, game::DVAR_FLAG_SAVED, "Show brainding in the top left corner");
+				branding = dvars::register_bool("branding", false, game::DVAR_FLAG_SAVED, "Show brainding in the top left corner");
 			}, scheduler::renderer);
 			scheduler::loop(draw_branding, scheduler::renderer);
 
