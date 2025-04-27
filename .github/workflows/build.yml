@@ -41,13 +41,13 @@ jobs:
       - name: Build ${{matrix.configuration}} binaries
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/h1-mod.sln
 
-      - name: Upload ${{matrix.configuration}} binaries
+      - name: Upload ${{matrix.configuration}} Binary
         uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.configuration}} binaries
+          name: ${{matrix.configuration}} Binary
           path: |
             build/bin/x64/${{matrix.configuration}}/${{ matrix.configuration == 'Debug' && 'h1-mod_dev.exe' || 'h1-mod.exe' }}
-            build/bin/x64/${{matrix.configuration}}/${{ matrix.configuration == 'Debug' && 'h1-mod_dev.pdb' || 'h1-mod.pdb' }}
+          #  build/bin/x64/${{matrix.configuration}}/${{ matrix.configuration == 'Debug' && 'h1-mod_dev.pdb' || 'h1-mod.pdb' }}
             
       #- name: Upload ${{matrix.configuration}} data artifacts
       #  uses: actions/upload-artifact@v4
