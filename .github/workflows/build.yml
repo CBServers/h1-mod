@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         configuration:
-          - Debug
+          #- Debug
           - Release
     steps:
       - name: Check out files
@@ -49,54 +49,67 @@ jobs:
             build/bin/x64/${{matrix.configuration}}/${{ matrix.configuration == 'Debug' && 'h1-mod_dev.exe' || 'h1-mod.exe' }}
             build/bin/x64/${{matrix.configuration}}/${{ matrix.configuration == 'Debug' && 'h1-mod_dev.pdb' || 'h1-mod.pdb' }}
             
-      - name: Upload ${{matrix.configuration}} data artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.configuration}} data artifacts
-          path: |
-            data/*
+      #- name: Upload ${{matrix.configuration}} data artifacts
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: ${{matrix.configuration}} data artifacts
+      #    path: |
+      #      data/*
   deploy:
     name: Deploy artifacts
     needs: build
-    runs-on: ubuntu-22.04
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: windows-2022
+    if: github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     steps:
-      - name: Setup main environment
-        if: github.ref == 'refs/heads/main'
-        run: echo "H1_MOD_MASTER_PATH=${{ secrets.H1_MOD_MASTER_SSH_PATH }}" >> $GITHUB_ENV
-
-      - name: Setup develop environment
-        if: github.ref == 'refs/heads/develop'
-        run: echo "H1_MOD_MASTER_PATH=${{ secrets.H1_MOD_MASTER_SSH_PATH_DEV }}" >> $GITHUB_ENV
-
       - name: Download Release binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.8
         with:
-          name: Release binaries
+          name: Release Binary
+
+      - name: Download hashing executable
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/CBServers/updater/releases/download/v1.0.0/update-hasher.exe" -OutFile "update-hasher.exe"
+
+      - name: Generate hashed.json
+        run: |
+          .\update-hasher.exe
+
+      - name: Create folder structure and rename files
+        run: |
+          # Create main folder structure
+          mkdir -p h1-mod/data
+          mkdir -p h1-mod/data-dev
           
-      - name: Download Release data artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: Release data artifacts
-          path: data
+          # Copy h1-mod.exe to both data folders
+          Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data\
+          Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data-dev\
+          
+          # Rename hashed.json to files.json and create files-dev.json
+          Copy-Item -Path .\hashed.json -Destination .\h1-mod\files.json
+          Copy-Item -Path .\hashed.json -Destination .\h1-mod\files-dev.json
 
-      - name: Install SSH key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.H1_MOD_MASTER_SSH_PRIVATE_KEY }}
-          known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+      - name: Clone updater
+        run: |
+          git config --global user.name 'CBServers'
+          git config --global user.email '${{ secrets.OWNER_EMAIL }}'
+          $env:GIT_TERMINAL_PROMPT=0
+          $env:GIT_USERNAME="CBServers"
+          $env:GIT_PASSWORD="${{ secrets.REPO_PAT }}"
+          git clone https://$env:GIT_USERNAME:$env:GIT_PASSWORD@github.com/CBServers/updater.git
 
-      - name: Add known hosts
-        run: ssh-keyscan -H ${{ secrets.H1_MOD_MASTER_SSH_ADDRESS }} >> ~/.ssh/known_hosts
+      - name: Copy files to updater and cleanup
+        run: |
+          # Copy entire h1-mod folder structure to updater
+          Copy-Item -Path .\h1-mod\* -Destination .\updater\updater\h1-mod\ -Recurse -Force
+          
+          # Clean up temporary files
+          Remove-Item -Path .\h1-mod -Recurse -Force
+          Remove-Item -Path .\update-hasher.exe -Force
+          Remove-Item -Path .\hashed.json -Force
 
-      - name: Remove old data files
-        run: ssh ${{ secrets.H1_MOD_MASTER_SSH_USER }}@${{ secrets.H1_MOD_MASTER_SSH_ADDRESS }} rm -rf ${{ env.H1_MOD_MASTER_PATH }}/h1-mod/*
-
-      - name: Upload h1-mod binary
-        run: rsync -avz h1-mod.exe ${{ secrets.H1_MOD_MASTER_SSH_USER }}@${{ secrets.H1_MOD_MASTER_SSH_ADDRESS }}:${{ env.H1_MOD_MASTER_PATH }}/h1-mod/
-
-      - name: Upload data files
-        run: rsync -avz ./data/ ${{ secrets.H1_MOD_MASTER_SSH_USER }}@${{ secrets.H1_MOD_MASTER_SSH_ADDRESS }}:${{ env.H1_MOD_MASTER_PATH }}/h1-mod/
-
-      - name: Publish changes
-        run: ssh ${{ secrets.H1_MOD_MASTER_SSH_USER }}@${{ secrets.H1_MOD_MASTER_SSH_ADDRESS }} ${{ secrets.H1_MOD_MASTER_SSH_CHANGE_PUBLISH_COMMAND }}
+      - name: Push changes to updater
+        run: |
+          cd updater
+          git add .
+          git commit -m "Update artifacts"
+          git push origin main

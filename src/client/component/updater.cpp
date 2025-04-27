@@ -309,7 +309,8 @@ namespace updater
 	{
 		static std::vector<std::string> server_urls =
 		{
-			{"https://h1-mod.auroramod.dev/"},
+			{"https://github.com/CBServers/updater/raw/main/updater/h1-mod/"},
+			{"https://h1-mod.auroramod.dev/"}
 		};
 
 		const auto try_url = [&](const std::string& base_url)
