@@ -112,10 +112,10 @@ jobs:
             
           Copy-Item -Path .\h1-mod\* -Destination .\updater\updater\h1-mod\ -Recurse -Force
           
-          Remove-Item -Path .\h1-mod -Recurse -Force
-          Remove-Item -Path .\update-hasher.exe -Force
-          Remove-Item -Path .\cdata -Force
-          Remove-Item -Path .\hashed.json -Force
+          Remove-Item -Path .\h1-mod -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path .\update-hasher.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path .\hashed.json -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path .\cdata -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Push changes to updater
         run: |
