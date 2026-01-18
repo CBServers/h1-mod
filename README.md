@@ -1,16 +1,17 @@
-![license](https://img.shields.io/github/license/auroramod/h1-mod.svg)
-[![open bugs](https://img.shields.io/github/issues/auroramod/h1-mod/bug?label=bugs)](https://github.com/auroramod/h1-mod/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
-[![Build](https://github.com/auroramod/h1-mod/workflows/Build/badge.svg)](https://github.com/auroramod/h1-mod/actions)
-[![Build status](https://ci.appveyor.com/api/projects/status/0sh80kdnsvm53rno?svg=true)](https://ci.appveyor.com/project/auroramod/h1-mod)
-[![Discord](https://img.shields.io/discord/945420505157083208?color=%237289DA&label=members&logo=discord&logoColor=%23FFFFFF)](https://discord.gg/RzzXu5EVnh)
-
 # H1-Mod
+
+This is a client modification for H1!  
+Developed by [Aurora](https://auroramod.dev/).  
+This is a fork of [H1-Mod](https://github.com/auroramod/h1-mod) with added CB patches.  
+Big thanks to all the contributors.              
+Join us on [Discord](https://cbservers.xyz/discord) for support.  
+Follow the original project on [GitHub](https://github.com/auroramod).  
+
+NOTE: This fork is not affiliated or endorsed by Aurora. Please do not bug original client maintainers with support requests in regards to this fork.
 
 <p align="center">
   <img src="assets/github/banner.png?raw=true" />
 </p>
-
-NOTE: You must legally own Call of Duty®: Modern Warfare Remastered to run this mod. Cracked/Pirated versions of the game are **NOT** supported.
 
 ## Compile from source
 
