@@ -240,6 +240,10 @@ editandcontinue "Off"
 warnings "Extra"
 characterset "ASCII"
 
+disablewarnings {
+	"5321", -- nonstandard extension used: encoding '\xF0' as a multi-byte utf-8 character (sol2)
+}
+
 if _OPTIONS["dev-build"] then
 	defines {"DEV_BUILD"}
 end
