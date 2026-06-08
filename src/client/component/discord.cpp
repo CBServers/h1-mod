@@ -5,6 +5,8 @@
 #include "command.hpp"
 #include "discord.hpp"
 #include "materials.hpp"
+#include "nat.hpp"
+#include "network.hpp"
 #include "party.hpp"
 #include "scheduler.hpp"
 
@@ -52,6 +54,124 @@ namespace discord
 		std::mutex avatar_map_mutex;
 		std::unordered_map<std::string, game::Material*> avatar_material_map;
 		game::Material* default_avatar_material{};
+
+		constexpr auto* JOIN_SECRET_PREFIX = "h1:1:";
+
+		std::mutex pending_join_mutex;
+		std::string pending_join_secret;
+
+		std::string get_join_address()
+		{
+			if (!game::CL_IsCgameInitialized())
+			{
+				return {};
+			}
+
+			// Host: our reachable endpoint, paired with a real token to hole-punch.
+			if (auto endpoint = nat::get_host_endpoint(); !endpoint.empty())
+			{
+				return endpoint;
+			}
+
+			// Client on a directly-reachable server: advertise it (token will be "-").
+			const auto& connected = party::get_server_connection_state().host;
+			if (network::is_connectable_address(connected) && !network::is_private_ip(connected))
+			{
+				return network::address_to_string(connected);
+			}
+
+			return {};
+		}
+
+		std::string make_join_secret(const std::string& address)
+		{
+			if (address.empty())
+			{
+				return {};
+			}
+
+			// "h1:1:<token>:<ip>:<port>"; token "-" means direct-only (no punch).
+			const auto token = nat::current_token();
+			const auto token_field = token.empty() ? std::string("-") : token;
+
+			const auto secret = std::string(JOIN_SECRET_PREFIX) + token_field + ":" + address;
+			if (secret.size() >= 128)
+			{
+				return {};
+			}
+
+			return secret;
+		}
+
+		bool parse_join_secret(const std::string& secret, std::string& token, std::string& address)
+		{
+			if (!utils::string::starts_with(secret, JOIN_SECRET_PREFIX))
+			{
+				return false;
+			}
+
+			// "<token>:<ip>:<port>"
+			const auto raw = secret.substr(std::strlen(JOIN_SECRET_PREFIX));
+			const auto sep = raw.find(':');
+			if (sep == std::string::npos)
+			{
+				return false;
+			}
+
+			token = raw.substr(0, sep);
+
+			const auto raw_address = raw.substr(sep + 1);
+			const auto parsed = network::address_from_string(raw_address);
+			if (!network::is_connectable_address(parsed))
+			{
+				return false;
+			}
+
+			address = network::address_to_string(parsed);
+			return true;
+		}
+
+		void process_pending_join()
+		{
+			std::string secret;
+			{
+				std::lock_guard<std::mutex> lock(pending_join_mutex);
+				secret = std::move(pending_join_secret);
+				pending_join_secret.clear();
+			}
+
+			if (secret.empty())
+			{
+				return;
+			}
+
+			std::string token;
+			std::string address;
+			if (!parse_join_secret(secret, token, address))
+			{
+				// Legacy/raw-address invite (pre-token secrets were just "ip:port").
+				const auto parsed = network::address_from_string(secret);
+				if (network::is_connectable_address(parsed))
+				{
+					command::execute("connect " + network::address_to_string(parsed));
+				}
+				else
+				{
+					console::error("Discord: invalid join secret\n");
+				}
+				return;
+			}
+
+			// "-" / empty token => friend is on a directly reachable server.
+			if (token.empty() || token == "-")
+			{
+				command::execute("connect " + address);
+				return;
+			}
+
+			// Hole-punch toward the host; falls back to `address` (port-forward/VPN).
+			nat::begin_join(token, address);
+		}
 
 		void update_discord_frontend()
 		{
@@ -108,25 +228,28 @@ namespace discord
 				{
 					discord_strings.state = "Private Match";
 					discord_presence.partyMax = max_clients_dvar->current.integer;
-					discord_presence.partyPrivacy = DISCORD_PARTY_PRIVATE;
 				}
 				else
 				{
 					discord_strings.state = utils::string::strip(hostname_dvar->current.string);
+					discord_presence.partyMax = party::get_server_connection_state().max_clients;
+				}
 
-					const auto server_connection_state = party::get_server_connection_state();
-					const auto server_ip_port = std::format("{}.{}.{}.{}:{}",
-						static_cast<int>(server_connection_state.host.ip[0]),
-						static_cast<int>(server_connection_state.host.ip[1]),
-						static_cast<int>(server_connection_state.host.ip[2]),
-						static_cast<int>(server_connection_state.host.ip[3]),
-						static_cast<int>(ntohs(server_connection_state.host.port))
-					);
+				// Join secret: an open private match (hole-punch) OR a directly reachable server.
+				const auto join_address = get_join_address();
+				discord_strings.join_secret = make_join_secret(join_address);
 
-					discord_strings.party_id = utils::cryptography::sha1::compute(server_ip_port, true).substr(0, 8);
-					discord_presence.partyMax = server_connection_state.max_clients;
+				if (!discord_strings.join_secret.empty())
+				{
+					static const auto nonce = utils::cryptography::random::get_integer();
+					std::hash<std::string> hash_fn;
+					discord_strings.party_id = utils::string::va("%zu", hash_fn(join_address) ^ nonce);
 					discord_presence.partyPrivacy = DISCORD_PARTY_PUBLIC;
-					discord_strings.join_secret = server_ip_port;
+				}
+				else
+				{
+					discord_strings.party_id.clear();
+					discord_presence.partyPrivacy = DISCORD_PARTY_PRIVATE;
 				}
 
 				auto server_discord_info = party::get_server_discord_info();
@@ -153,8 +276,8 @@ namespace discord
 			discord_presence.smallImageText = discord_strings.small_image_text.data();
 			discord_presence.largeImageKey = discord_strings.large_image_key.data();
 			discord_presence.largeImageText = discord_strings.large_image_text.data();
-			discord_presence.partyId = discord_strings.party_id.data();
-			discord_presence.joinSecret = discord_strings.join_secret.data();
+			discord_presence.partyId = discord_strings.party_id.empty() ? nullptr : discord_strings.party_id.data();
+			discord_presence.joinSecret = discord_strings.join_secret.empty() ? nullptr : discord_strings.join_secret.data();
 
 			Discord_UpdatePresence(&discord_presence);
 		}
@@ -254,17 +377,16 @@ namespace discord
 
 		void join_game(const char* join_secret)
 		{
+			if (!join_secret || !join_secret[0])
+			{
+				return;
+			}
+
 			console::debug("Discord: join_game called with secret '%s'\n", join_secret);
 
-			scheduler::once([=]
-			{
-				game::netadr_s target{};
-				if (game::NET_StringToAdr(join_secret, &target))
-				{
-					console::info("Discord: Connecting to server '%s'\n", join_secret);
-					party::connect(target);
-				}
-			}, scheduler::pipeline::main);
+			// Queue here (Discord callback thread); process_pending_join does the work on main.
+			std::lock_guard<std::mutex> lock(pending_join_mutex);
+			pending_join_secret = join_secret;
 		}
 
 		std::string get_display_name(const DiscordUser* user)
@@ -423,8 +545,16 @@ namespace discord
 				}, scheduler::main);
 			}
 
-			scheduler::loop(Discord_RunCallbacks, scheduler::async, 500ms);
-			scheduler::loop(update_discord, scheduler::async, 5s);
+			scheduler::loop(update_discord, scheduler::pipeline::main, 5s);
+
+			// Discord callbacks (and the resulting joins) must run on the main thread,
+			// since join handling drives the NAT punch and the game's network socket,
+			// and reads nat state that is only touched on main.
+			scheduler::loop([]
+			{
+				Discord_RunCallbacks();
+				process_pending_join();
+			}, scheduler::pipeline::main, 250ms);
 
 			initialized_ = true;
 

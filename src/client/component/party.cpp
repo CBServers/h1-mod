@@ -1047,6 +1047,7 @@ namespace party
 				info.set("xuid", utils::string::va("%llX", steam::SteamUser()->GetSteamID().bits));
 				info.set("mapname", mapname);
 				info.set("isPrivate", get_dvar_string("g_password").empty() ? "0" : "1");
+				info.set("joinable", (game::environment::is_dedi() || get_dvar_bool("nat_open")) ? "1" : "0");
 				info.set("clients", utils::string::va("%i", get_client_count()));
 				info.set("bots", utils::string::va("%i", get_bot_count()));
 				info.set("sv_maxclients", utils::string::va("%i", *game::mp::svs_numclients));
@@ -1143,6 +1144,14 @@ namespace party
 				if (gametype.empty())
 				{
 					menu_error("Connection failed: Invalid gametype.");
+					return;
+				}
+
+				// Only block when explicitly closed ("0"); a missing field stays joinable
+				// (dedis / older builds / other forks unaffected).
+				if (info.get("joinable") == "0")
+				{
+					menu_error("This match is not open to joining. Ask the host to open it from the pause menu.");
 					return;
 				}
 
