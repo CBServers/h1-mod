@@ -351,6 +351,12 @@ namespace nat
 		return host_token;
 	}
 
+	void get_rendezvous(std::string& host, int& port)
+	{
+		host = rendezvous_ip ? rendezvous_ip->current.string : std::string{};
+		port = rendezvous_port ? atoi(rendezvous_port->current.string) : 0;
+	}
+
 	std::string get_host_endpoint()
 	{
 		// Gated on host_token so the advertised endpoint and join-secret token agree.

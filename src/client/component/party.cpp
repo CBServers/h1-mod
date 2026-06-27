@@ -757,6 +757,23 @@ namespace party
 		return server_connection_state;
 	}
 
+	std::string get_public_server_name()
+	{
+		// Public dedicated server only: connected (not hosting) to a reachable public IP.
+		if (!game::CL_IsCgameInitialized() || game::SV_Loaded())
+		{
+			return {};
+		}
+
+		if (!network::is_valid_public_ip(server_connection_state.host))
+		{
+			return {};
+		}
+
+		const auto* hostname = game::Dvar_FindVar("sv_hostname");
+		return hostname ? hostname->current.string : std::string{};
+	}
+
 	std::optional<discord_information> get_server_discord_info()
 	{
 		return server_discord_info;

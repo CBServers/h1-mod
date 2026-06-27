@@ -36,4 +36,6 @@ namespace party
 
 	int get_client_count();
 	int get_bot_count();
+
+	std::string get_public_server_name();
 }
