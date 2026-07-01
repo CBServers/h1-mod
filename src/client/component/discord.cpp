@@ -214,6 +214,12 @@ namespace discord
 		// True once the game can act on a connect (menu reached and online data synced); earlier crashes.
 		bool join_ready()
 		{
+			// SP can't join, and Live_SyncOnlineDataFlags is MP-only (null in the SP binary).
+			if (!game::environment::is_mp())
+			{
+				return false;
+			}
+
 			return game_initialized.load() && game::Live_SyncOnlineDataFlags(0) == 0;
 		}
 
@@ -646,9 +652,16 @@ namespace discord
 		// Always reported (even at the menu) so the launcher knows which play mode is running.
 		state.mode = get_current_mode();
 
-		// Only multiplayer streams rich, joinable presence; SP just reports menu + mode.
+		// Only multiplayer streams rich, joinable presence; SP reports mode + current mission.
 		if (!game::environment::is_mp())
 		{
+			if (game::CL_IsCgameInitialized())
+			{
+				state.in_game = true;
+				const auto* sp_map = game::Dvar_FindVar("mapname");
+				state.mapname = sp_map && sp_map->current.string ? sp_map->current.string : std::string{};
+				state.map_display = truncate(strip_colors(state.mapname), 128);
+			}
 			return state;
 		}
 
