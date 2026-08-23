@@ -85,25 +85,31 @@ jobs:
 
       - name: Download hashing executable
         run: |
-          Invoke-WebRequest -Uri "https://github.com/CBServers/updater/releases/download/v1.0.0/update-hasher.exe" -OutFile "update-hasher.exe"
+          Invoke-WebRequest -Uri "https://github.com/CBServers/updater/releases/latest/download/update-hasher.exe" -OutFile "update-hasher.exe"
 
       - name: Generate hashed.json
         run: |
           .\update-hasher.exe
 
+      - name: Set channel names
+        run: |
+          if ("${{ github.ref }}" -eq "refs/heads/develop") {
+            echo "DATA_FOLDER=data-dev" >> $env:GITHUB_ENV
+            echo "FILES_NAME=files-dev.json" >> $env:GITHUB_ENV
+          } else {
+            echo "DATA_FOLDER=data" >> $env:GITHUB_ENV
+            echo "FILES_NAME=files.json" >> $env:GITHUB_ENV
+          }
+
       - name: Create folder structure and rename files
         run: |
-          mkdir -p h1-mod/data
-          mkdir -p h1-mod/data-dev
+          mkdir -p h1-mod/${{ env.DATA_FOLDER }}
 
-          Copy-Item -Path .\cdata -Destination .\h1-mod\data\ -Recurse -Force
-          Copy-Item -Path .\cdata -Destination .\h1-mod\data-dev\ -Recurse -Force
+          Copy-Item -Path .\cdata -Destination .\h1-mod\${{ env.DATA_FOLDER }}\ -Recurse -Force
           
-          Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data\
-          Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\data-dev\
+          Copy-Item -Path .\h1-mod.exe -Destination .\h1-mod\${{ env.DATA_FOLDER }}\
           
-          Copy-Item -Path .\hashed.json -Destination .\h1-mod\files.json
-          Copy-Item -Path .\hashed.json -Destination .\h1-mod\files-dev.json
+          Copy-Item -Path .\hashed.json -Destination .\h1-mod\${{ env.FILES_NAME }}
 
       - name: Clone updater
         run: |
@@ -120,6 +126,12 @@ jobs:
             New-Item -Path ".\updater\updater\h1-mod" -ItemType Directory -Force
           }
             
+          # Wipe this channel so files dropped from the build stop being shipped
+          $channel = ".\updater\updater\h1-mod\${{ env.DATA_FOLDER }}"
+          if (Test-Path -Path $channel) {
+            Remove-Item -Path $channel -Recurse -Force
+          }
+
           Copy-Item -Path .\h1-mod\* -Destination .\updater\updater\h1-mod\ -Recurse -Force
           
           Remove-Item -Path .\h1-mod -Recurse -Force -ErrorAction SilentlyContinue
