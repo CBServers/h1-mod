@@ -48,6 +48,8 @@ namespace ui_scripting
 
 		utils::hook::detour hks_load_hook;
 
+		bool running{};
+
 		const auto lui_common = utils::nt::load_resource(LUI_COMMON);
 		const auto lui_updater = utils::nt::load_resource(LUI_UPDATER);
 		const auto lua_json = utils::nt::load_resource(LUA_JSON);
@@ -487,12 +489,17 @@ namespace ui_scripting
 
 		void* hks_start_stub(char a1)
 		{
-			const auto _0 = gsl::finally(&try_start);
+			const auto _0 = gsl::finally([]
+			{
+				try_start();
+				running = *game::hks::lua_state != nullptr;
+			});
 			return hks_start_hook.invoke<void*>(a1);
 		}
 
 		void hks_shutdown_stub()
 		{
+			running = false;
 			converted_functions.clear();
 			globals = {};
 			return hks_shutdown_hook.invoke<void>();
@@ -610,7 +617,7 @@ namespace ui_scripting
 
 	bool lui_running()
 	{
-		return *game::hks::lua_state != nullptr;
+		return running && *game::hks::lua_state != nullptr;
 	}
 
 	class component final : public component_interface

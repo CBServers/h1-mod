@@ -2,8 +2,12 @@
 #include "loader/component_loader.hpp"
 #include "game/game.hpp"
 
+#include "ipc.hpp"
 #include "discord.hpp"
+#include "friends.hpp"
+#include "nat.hpp"
 #include "scheduler.hpp"
+#include "toast.hpp"
 
 #include <utils/concurrency.hpp>
 #include <utils/thread.hpp>
@@ -27,6 +31,7 @@ namespace ipc
 
 		std::atomic_bool stop_io{false};
 		std::atomic_bool force_resend{false};
+		std::atomic_bool pipe_connected{false};
 		std::thread io_thread;
 
 		utils::concurrency::container<std::deque<std::string>>& get_queue()
@@ -62,10 +67,12 @@ namespace ipc
 			add("mapDisplay", state.map_display);
 			add("mode", state.mode);
 			add("gametype", state.gametype);
+			add("gametypeRaw", state.gametype_raw);
 			add("serverName", state.server_name);
 			add("matchId", state.match_id);
 			doc.AddMember(rapidjson::StringRef("players"), state.players, allocator);
 			doc.AddMember(rapidjson::StringRef("maxPlayers"), state.max_players, allocator);
+			doc.AddMember(rapidjson::StringRef("openable"), state.openable, allocator);
 
 			// Optional join transport: omitted when not joinable.
 			if (const auto transport = discord::get_join_transport())
@@ -145,6 +152,114 @@ namespace ipc
 		int jint(const rapidjson::Value& value, const char* key)
 		{
 			return (value.HasMember(key) && value[key].IsInt()) ? value[key].GetInt() : 0;
+		}
+
+		bool jbool(const rapidjson::Value& value, const char* key)
+		{
+			return value.HasMember(key) && value[key].IsBool() && value[key].GetBool();
+		}
+
+		// Full friends snapshot from the launcher; parsed on the io thread, the store swap is thread-safe.
+		void handle_friends(const rapidjson::Value& doc)
+		{
+			if (!game::environment::is_mp() || !doc.HasMember("friends") || !doc["friends"].IsArray())
+			{
+				return;
+			}
+
+			std::vector<friends::friend_record> entries;
+			for (const auto& item : doc["friends"].GetArray())
+			{
+				if (!item.IsObject())
+				{
+					continue;
+				}
+
+				friends::friend_record record{};
+				record.id = jstr(item, "id");
+				record.key = jstr(item, "discordId");
+				if (record.key.empty())
+				{
+					record.key = jstr(item, "cbId");
+				}
+				record.name = jstr(item, "name");
+				record.status = jstr(item, "status");
+
+				if (item.HasMember("game") && item["game"].IsObject())
+				{
+					const auto& g = item["game"];
+					record.game_id = jstr(g, "id");
+					record.in_game = record.game_id == "h1-mod";
+					record.mode = jstr(g, "mode");
+					record.map = jstr(g, "map");
+					record.gametype = jstr(g, "gametype");
+					record.same_match = record.in_game && jbool(g, "sameMatch");
+					record.joinable = record.in_game && jbool(g, "joinable") && !record.same_match;
+				}
+
+				if (!record.id.empty() && !record.name.empty())
+				{
+					entries.push_back(std::move(record));
+				}
+			}
+
+			friends::apply_snapshot(std::move(entries));
+		}
+
+		// Passive heads-up for an incoming invite or knock; answering still happens in the launcher.
+		void handle_notify(const rapidjson::Value& doc)
+		{
+			const auto kind = jstr(doc, "kind");
+			if (kind != "invite" && kind != "join-request")
+			{
+				return;
+			}
+
+			auto from = toast::sanitize_name(jstr(doc, "from"));
+			if (from.empty())
+			{
+				from = "A friend";
+			}
+
+			// Io thread only. Keeps a burst of notices from stacking LUI calls.
+			static std::chrono::steady_clock::time_point last_toast{};
+			static std::string last_key;
+
+			const auto now = std::chrono::steady_clock::now();
+			const auto key = kind + ":" + from;
+			if (now - last_toast < 3s || (key == last_key && now - last_toast < 15s))
+			{
+				return;
+			}
+
+			last_toast = now;
+			last_key = key;
+
+			if (kind == "invite")
+			{
+				toast::show("INVITE", from + " invited you", "Accept in CB Launcher");
+			}
+			else
+			{
+				toast::show("JOIN REQUEST", from + " wants to join", "Approve in CB Launcher to open your match");
+			}
+		}
+
+		// Launcher-approved knock/invite: open the match, ack, and push the transport immediately.
+		void handle_open_match()
+		{
+			scheduler::once([]
+			{
+				const auto was_closed = nat::can_open_to_friends();
+				const auto opened = nat::open_to_friends();
+				enqueue(std::string(R"({"type":"open-match-ack","opened":)") + (opened ? "true" : "false") + "}\n");
+				send_presence();
+
+				if (was_closed && opened)
+				{
+					toast::show("OPEN TO FRIENDS", "Friends can now join this match.");
+				}
+			}, scheduler::pipeline::main);
 		}
 
 		// Route the structured transport (data, never a console string) through the join path, then ack.
@@ -235,6 +350,18 @@ namespace ipc
 			{
 				handle_connect(doc);
 			}
+			else if (type == "friends")
+			{
+				handle_friends(doc);
+			}
+			else if (type == "notify")
+			{
+				handle_notify(doc);
+			}
+			else if (type == "open-match")
+			{
+				handle_open_match();
+			}
 		}
 
 		void interruptible_sleep(const std::chrono::milliseconds total)
@@ -277,6 +404,7 @@ namespace ipc
 						R"({"type":"hello","protocolVersion":1,"game":"h1-mod","clientVersion":")")
 					+ VERSION + R"(","mode":")" + discord::get_current_mode() + "\"}\n";
 
+				pipe_connected = true;
 				bool alive = write_all(pipe, hello);
 				force_resend = true; // make the next tick re-stream presence for this connection
 
@@ -299,34 +427,42 @@ namespace ipc
 						}
 					}
 
-					// Detect a broken pipe (launcher gone) and read any incoming messages.
+					// Detect a broken pipe (launcher gone) and drain incoming messages; friends snapshots run to several KB.
 					DWORD available = 0;
-					if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr))
+					while (alive && !stop_io)
 					{
-						alive = false;
-						break;
-					}
-					if (available > 0)
-					{
-						char scratch[512];
-						DWORD read = 0;
-						if (ReadFile(pipe, scratch, sizeof(scratch), &read, nullptr) && read > 0)
+						if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr))
 						{
-							inbuf.append(scratch, read);
+							alive = false;
+							break;
+						}
 
-							size_t newline;
-							while ((newline = inbuf.find('\n')) != std::string::npos)
+						if (available == 0)
+						{
+							break;
+						}
+
+						char scratch[4096];
+						DWORD read = 0;
+						if (!ReadFile(pipe, scratch, sizeof(scratch), &read, nullptr) || read == 0)
+						{
+							break;
+						}
+
+						inbuf.append(scratch, read);
+
+						size_t newline;
+						while ((newline = inbuf.find('\n')) != std::string::npos)
+						{
+							auto line = inbuf.substr(0, newline);
+							inbuf.erase(0, newline + 1);
+							if (!line.empty() && line.back() == '\r')
 							{
-								auto line = inbuf.substr(0, newline);
-								inbuf.erase(0, newline + 1);
-								if (!line.empty() && line.back() == '\r')
-								{
-									line.pop_back();
-								}
-								if (!line.empty())
-								{
-									handle_incoming_line(line);
-								}
+								line.pop_back();
+							}
+							if (!line.empty())
+							{
+								handle_incoming_line(line);
 							}
 						}
 					}
@@ -337,12 +473,37 @@ namespace ipc
 					}
 				}
 
+				pipe_connected = false;
 				CloseHandle(pipe);
 				// Pipe lost: hand presence back to native RPC (debounced client-side).
 				discord::set_launcher_presence_owner(false);
+				if (game::environment::is_mp())
+				{
+					friends::apply_snapshot({});
+				}
 				get_queue().access([](std::deque<std::string>& queue) { queue.clear(); });
 			}
 		}
+	}
+
+	void send_message(std::string line)
+	{
+		if (!pipe_connected)
+		{
+			return;
+		}
+
+		if (line.empty() || line.back() != '\n')
+		{
+			line.push_back('\n');
+		}
+
+		enqueue(std::move(line));
+	}
+
+	void flush_presence()
+	{
+		scheduler::once(send_presence, scheduler::pipeline::main);
 	}
 
 	class component final : public component_interface

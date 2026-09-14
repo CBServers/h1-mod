@@ -47,5 +47,6 @@ namespace ui_scripting
 	template <typename F>
 	game::hks::cclosure* convert_function(F f);
 
+	// True once the LUI VM is up with mod scripts loaded; false across a VM restart.
 	bool lui_running();
 }
