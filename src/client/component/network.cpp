@@ -16,6 +16,7 @@ namespace network
 {
 	namespace
 	{
+		std::atomic<uint16_t> bound_port{};
 
 		std::unordered_map<std::string, callback>& get_callbacks()
 		{
@@ -126,6 +127,13 @@ namespace network
 
 			if (bind(sock, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != -1)
 			{
+				sockaddr_in local{};
+				int length = sizeof(local);
+				if (getsockname(sock, reinterpret_cast<sockaddr*>(&local), &length) == 0)
+				{
+					bound_port = ntohs(local.sin_port);
+				}
+
 				return sock;
 			}
 
@@ -258,6 +266,11 @@ namespace network
 			&& address.ip[0] != 127
 			&& address.ip[0] < 224
 			&& ::ntohs(address.port) >= 1024;
+	}
+
+	uint16_t get_bound_port()
+	{
+		return bound_port;
 	}
 
 	game::dvar_t* register_netport_stub(const char* dvarName, int value, int min, int max, unsigned int flags,

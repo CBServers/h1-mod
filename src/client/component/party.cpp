@@ -10,6 +10,7 @@
 #include "download.hpp"
 #include "fastfiles.hpp"
 #include "mods.hpp"
+#include "nat.hpp"
 
 #include "game/dvars.hpp"
 #include "game/game.hpp"
@@ -1126,6 +1127,21 @@ namespace party
 				if (info.get("challenge") != server_connection_state.challenge)
 				{
 					menu_error("Connection failed: Invalid challenge.");
+					return;
+				}
+
+				// Our own xuid means the address hairpinned back to this machine's port mapping.
+				const auto own_xuid = utils::string::va("%llX", steam::SteamUser()->GetSteamID().bits);
+				if (info.get("dedicated") != "1" && utils::string::to_lower(info.get("xuid")) == utils::string::to_lower(own_xuid))
+				{
+					if (nat::on_self_connect(target))
+					{
+						close_joining_popups();
+					}
+					else
+					{
+						menu_error("That address points back at your own game. Ask the host to check their port forwarding.");
+					}
 					return;
 				}
 
