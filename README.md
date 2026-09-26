@@ -10,27 +10,20 @@ Follow the original project on [GitHub](https://github.com/auroramod).
 NOTE: This fork is not affiliated or endorsed by Aurora. Please do not bug original client maintainers with support requests in regards to this fork.
 
 <p align="center">
-  <img src="assets/github/banner.png?raw=true" />
+  <img src="assets/github/banner.png?raw=true" width="500" height="500" />
 </p>
 
-## Compile from source
+## Compile from source code
 
-- Clone the Git repo. Do NOT download it as ZIP, that won't work.
-- Update the submodules and run `premake5 vs2022` or simply use the delivered `generate.bat`.
-- Build via solution file in `build\h1-mod.sln`.
-
-### Premake arguments
-
-| Argument                    | Description                                    |
-|:----------------------------|:-----------------------------------------------|
-| `--copy-to=PATH`            | Optional, copy the EXE to a custom folder after build, define the path here if wanted. |
-| `--dev-build`               | Enable development builds of the client. |
+- Clone the Git repo via [Git](https://git-scm.com/install/windows) or [GitHub Desktop](https://desktop.github.com/download/). **DO NOT download it as ZIP** as it will not work.
+- Run the `generate.bat` script to generate the project solution.
+- Build the project via the generated solution file in `build\h1-mod.sln`.
 
 ## Credits
 
-- [s1x-client](https://github.com/HeartbeatingForCenturies/s1x-client) - codebase and research (predecessor of MWR)
-- [h2-mod](https://github.com/fedddddd/h2-mod) - research (successor of MWR)
-- [momo5502](https://github.com/momo5502) - Arxan/Steam research, former lead developer of [XLabsProject](https://github.com/XLabsProject)
+- [s1x-client](https://git.alterware.dev/alterware/s1-mod) *(now **s1-mod**)* - codebase and research
+- [h2-mod](https://github.com/alicealys/h2-mod) - research
+- [momo5502](https://github.com/momo5502) - Arxan & Steam research. former lead developer of [XLabsProject](https://github.com/XLabsProject)
 
 ## Disclaimer
 

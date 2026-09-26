@@ -335,6 +335,12 @@ namespace patches
 			console::info("quitting...\n");
 			com_quit_f_hook.invoke<void>();
 		}
+
+		utils::hook::detour sub_12C5B0_hook;
+		__int64 sub_12C5B0()
+		{
+			return sub_12C5B0_hook.invoke<__int64>() * 0x10;
+		}
 	}
 
 	class component final : public component_interface
@@ -519,6 +525,11 @@ namespace patches
 			// Re-implement dev prints
 			com_quit_f_hook.create(0x17CD00_b, com_quit_f_stub);
 			sv_shutdown_hook.create(0x5543A0_b, sv_shutdown_stub);
+
+			// Allow using unauthorized clantags
+			utils::hook::set<uint32_t>(0x1D9800_b, 0x90C301B0);
+
+			sub_12C5B0_hook.create(0x12C5B0_b, sub_12C5B0);
 		}
 	};
 }

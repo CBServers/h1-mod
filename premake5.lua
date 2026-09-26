@@ -240,13 +240,7 @@ editandcontinue "Off"
 warnings "Extra"
 characterset "ASCII"
 
-disablewarnings {
-	"5321", -- nonstandard extension used: encoding '\xF0' as a multi-byte utf-8 character (sol2)
-}
-
-if _OPTIONS["dev-build"] then
-	defines {"DEV_BUILD"}
-end
+disablewarnings {"5321"}
 
 if os.getenv("CI") then
 	defines {"CI"}
@@ -289,9 +283,6 @@ kind "ConsoleApp"
 language "C++"
 
 targetname "h1-mod"
-filter "configurations:Debug"
-	targetname "h1-mod_dev"
-filter {}
 
 pchheader "std_include.hpp"
 pchsource "src/client/std_include.cpp"
@@ -312,6 +303,15 @@ prebuildcommands {"pushd %{_MAIN_SCRIPT_DIR}", "tools\\premake5 generate-buildin
 
 if _OPTIONS["copy-to"] then
 	postbuildcommands {"copy /y \"$(TargetPath)\" \"" .. _OPTIONS["copy-to"] .. "\""}
+end
+
+if os.getenv("AURORAH1_GAME_PATH") then
+	debugdir "$(AURORAH1_GAME_PATH)"
+	debugcommand "$(AURORAH1_GAME_PATH)\\$(TargetName)$(TargetExt)"
+	postbuildcommands {
+		"echo Copying to Aurora H1-mod game path...",
+		"copy /y \"$(OutDir)$(TargetName)$(TargetExt)\" \"$(AURORAH1_GAME_PATH)\\$(TargetName)$(TargetExt)\""
+	}
 end
 
 if os.getenv("COMPUTERNAME") == "DESKTOP-JDO25VF" then

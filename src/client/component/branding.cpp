@@ -42,7 +42,7 @@ namespace branding
 				return;
 			}
 
-#ifdef DEBUG
+#ifdef _DEBUG
 			const auto text = "h1-mod: " VERSION " (" __DATE__ " " __TIME__ ")";
 #else
 			const auto text = "h1-mod: " VERSION;
