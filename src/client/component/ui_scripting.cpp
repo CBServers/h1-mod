@@ -237,7 +237,7 @@ namespace ui_scripting
 			{
 				table array;
 				auto index = 1;
-				for (const auto& value : json.array())
+				for (const auto& value : json)
 				{
 					array[index++] = json_to_lua(value);
 				}
@@ -565,14 +565,22 @@ namespace ui_scripting
 			auto depot_table = table();
 			lua["customdepot"] = depot_table;
 
+			static const std::string depot_file_path = "players2/user/depot.json";
+
 			depot_table["save"] = [](const std::string& data)
 			{
-				// todo
+				return utils::io::write_file(depot_file_path, data, false);
 			};
 
-			depot_table["load"] = []()
+			depot_table["load"] = []() -> script_value
 			{
-				// todo
+				std::string data;
+				if (!utils::io::read_file(depot_file_path, &data))
+				{
+					return {};
+				}
+
+				return data;
 			};
 
 			auto server_list_table = table();
