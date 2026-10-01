@@ -10,6 +10,8 @@
 #include "scheduler.hpp"
 #include "filesystem.hpp"
 #include "menus.hpp"
+#include "gameplay.hpp"
+#include "barrier_clips.hpp"
 
 #include "game/game.hpp"
 #include "game/dvars.hpp"
@@ -124,6 +126,29 @@ namespace patches
 		{
 			*hash = dvar->hash;
 			return true;
+		}
+
+		utils::hook::detour player_cmd_set_client_dvar_hook;
+
+		void player_cmd_set_client_dvar_stub(const game::scr_entref_t entref)
+		{
+			player_cmd_set_client_dvar_hook.invoke<void>(entref);
+
+			if (entref.classnum != 0 || game::Scr_GetNumParam() < 2)
+			{
+				return;
+			}
+
+			// keep the server's authoritative per-client preferences in sync with what we push to the client
+			const std::string dvar = game::Scr_GetString(0);
+			if (dvar == "pm_iw4MechanicsClient")
+			{
+				gameplay::set_iw4_mechanics_client_pref(entref.entnum, std::atoi(game::Scr_GetString(1)) != 0);
+			}
+			else if (dvar == "bg_disableBarrierClipsClient")
+			{
+				barrier_clips::set_client_pref(entref.entnum, std::atoi(game::Scr_GetString(1)) != 0);
+			}
 		}
 
 		utils::hook::detour db_read_raw_file_hook;
@@ -476,6 +501,7 @@ namespace patches
 			utils::hook::call(0x40878A_b, get_client_dvar); // setclientdvars
 			utils::hook::set<uint8_t>(0x407EB6_b, 0xEB); // setclientdvar
 			utils::hook::set<uint8_t>(0x4087B2_b, 0xEB); // setclientdvars
+			player_cmd_set_client_dvar_hook.create(0x407D90_b, player_cmd_set_client_dvar_stub); // PlayerCmd_SetClientDvar
 
 			// some [data validation] anti tamper thing that kills performance
 			dvars::override::register_int("dvl", 0, 0, 0, game::DVAR_FLAG_READ);

@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "dvars.hpp"
+#include "gameplay.hpp"
 
 #include "game/game.hpp"
 #include "game/dvars.hpp"
@@ -32,8 +33,38 @@ namespace gameplay
 		utils::hook::detour start_weapon_anim_hook;
 		utils::hook::detour pm_sprint_start_interfering_buttons_hook;
 
+		constexpr auto MAX_CLIENTS = 18;
+
 		game::dvar_t* pm_iw4_mechanics = nullptr;
+		game::dvar_t* pm_iw4_mechanics_client = nullptr;
 		game::dvar_t* pm_glide_on_inspect = nullptr;
+
+		// authoritative per-client preference, kept in sync server-side (see set_iw4_mechanics_client_pref)
+		bool iw4_mechanics_pref[MAX_CLIENTS] = {};
+
+		bool iw4_mechanics_enabled(const game::mp::playerState_s* ps)
+		{
+			if (pm_iw4_mechanics && pm_iw4_mechanics->current.enabled)
+			{
+				return true; // server master switch forces the mechanics on for everyone
+			}
+
+			static game::dvar_t* sv_running = nullptr;
+			if (!sv_running)
+			{
+				sv_running = game::Dvar_FindVar("sv_running");
+			}
+
+			if (sv_running && sv_running->current.enabled)
+			{
+				// running the authoritative sim: honour this client's own preference
+				const auto client_num = static_cast<unsigned char>(ps->clientNum);
+				return client_num < MAX_CLIENTS && iw4_mechanics_pref[client_num];
+			}
+
+			// remote client: only ever predicts the local player, so use our own local preference
+			return pm_iw4_mechanics_client && pm_iw4_mechanics_client->current.enabled;
+		}
 
 		void jump_apply_slowdown_stub(game::mp::playerState_s* ps)
 		{
@@ -535,7 +566,7 @@ namespace gameplay
 
 		void begin_weapon_change_stub(game::mp::pmove_t* pm, game::Weapon new_weap, bool is_new_alt, bool quick, unsigned int* holdrand)
 		{
-			if (!pm_iw4_mechanics || !pm_iw4_mechanics->current.enabled)
+			if (!iw4_mechanics_enabled(pm->ps))
 			{
 				begin_weapon_change_hook.invoke<void>(pm, new_weap, is_new_alt, quick, holdrand);
 				return;
@@ -544,7 +575,9 @@ namespace gameplay
 			auto right_anim = pm->ps->weapState[game::WEAPON_HAND_RIGHT].weapAnim;
 			auto left_anim = pm->ps->weapState[game::WEAPON_HAND_LEFT].weapAnim;
 
-			auto stall_anim = (pm->ps->sprintState.lastSprintStart > pm->ps->sprintState.lastSprintEnd);
+			// holding sprint also stalls, allowing reverse reloads/fake nacs
+			auto stall_anim = ((pm->cmd.buttons & game::BUTTON_SPRINT) != 0 ||
+				pm->ps->sprintState.lastSprintStart > pm->ps->sprintState.lastSprintEnd);
 
 			begin_weapon_change_hook.invoke<void>(pm, new_weap, is_new_alt, quick, holdrand);
 
@@ -626,6 +659,14 @@ namespace gameplay
 			}
 
 			return true;
+		}
+	}
+
+	void set_iw4_mechanics_client_pref(const int client_num, const bool value)
+	{
+		if (client_num >= 0 && client_num < MAX_CLIENTS)
+		{
+			iw4_mechanics_pref[client_num] = value;
 		}
 	}
 
@@ -720,6 +761,10 @@ namespace gameplay
 			utils::hook::set<uint32_t>(0x4406FE_b, 0x1DC);
 
 			pm_iw4_mechanics = dvars::register_bool("pm_iw4Mechanics", false, game::DVAR_FLAG_REPLICATED, "Use IW4 mechanics");
+
+			// per-client opt-in; pushed by the server via `self setclientdvar("pm_iw4MechanicsClient", 1)`
+			// no flags so the client's setclientdvar handler (patches.cpp) accepts it
+			pm_iw4_mechanics_client = dvars::register_bool("pm_iw4MechanicsClient", false, game::DVAR_FLAG_NONE, "Use IW4 mechanics for this client");
 			pm_glide_on_inspect = dvars::register_bool("pm_glideOnInspect", true, game::DVAR_FLAG_NONE, "Do a gliding animation on inspects?");
 
 			// stall animations on sprints
